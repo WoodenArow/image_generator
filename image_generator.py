@@ -4,7 +4,6 @@ import threading
 import re
 import io
 from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
 import traceback
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
@@ -38,28 +37,17 @@ def get_run_dir() -> str:
 # GUI-only bootstrap; data processing and Pillow/pandas will be imported lazily
 
 
-@dataclass
-class FieldSpec:
-    name: str
-    x: int
-    y: int
-    font_size: int = 32
-    color: str = "#000000"
-    anchor: str = "lt"  # left-top by default (Pillow anchor like 'la', 'mm', etc. will be mapped)
 
 
 DEFAULT_CONFIG = {
     "template": "template.jpg",
     "output_dir": "output",
     "fields": [
-        # Пример поля: Артикул (п.3) — координаты и размер могут быть относительными (0..1)
         {"name": "Артикул", "x": 0.58, "y": 0.12, "font_size": 0.070, "font_ref": "w", "font_units": "rel", "color": "#000000", "anchor": "la"},
-        # Пример поля: Наименование товара (п.2), если требуется текстом поверх шаблона
-        # {"name": "Наименование товара", "x": 100, "y": 60, "font_size": 48, "color": "#000000", "anchor": "la"},
     ],
     "multiline_fields": [
         {
-            "name": "Применимость по КК",  # п.6
+            "name": "Применимость по КК",
             "x": 0.62,
             "y": 0.42,
             "font_size": 0.050,
@@ -73,26 +61,22 @@ DEFAULT_CONFIG = {
             "line_spacing": 1.25
         }
     ],
-    "image_box": {  # п.4 – картинка по ссылке
+    "image_box": {
         "source_column": "Ссылка на фото",
         "x": 0.05,
         "y": 0.28,
         "width": 0.58,
         "height": 0.52,
-        "fit": "contain",  # contain|cover
+        "fit": "contain",
         "remove_bg": True,
         "remove_bg_color": "#FFFFFF",
         "remove_bg_tolerance": 20,
-        "save_processed_png": False,  # сохранять промежуточный PNG с альфой для отладки
-        "save_processed_png_dir": "cache",
-        "debug_remove_bg": False,      # писать в лог проценты прозрачности и сохранять маску
-        "debug_dir": "cache",
-        "auto_crop": True              # автоматически обрезать пустые поля после удаления фона
+        "auto_crop": True
     },
     "font": {
-        "ttf_path": None,  # e.g. "C:/Windows/Fonts/arial.ttf"; if None, ImageFont.load_default()
+        "ttf_path": None,
     },
-    "filename_pattern": "{article_clean}.jpg",  # имя файла из столбца Артикул
+    "filename_pattern": "{article_clean}.jpg",
 }
 
 
@@ -106,7 +90,6 @@ class ImageGeneratorApp:
         self.output_dir: Optional[str] = None
         self.config: Dict[str, Any] = DEFAULT_CONFIG.copy()
 
-        # UI
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -115,30 +98,25 @@ class ImageGeneratorApp:
         frame = tk.Frame(self.root)
         frame.pack(fill=tk.BOTH, expand=True, padx=pad, pady=pad)
 
-        # Input file
         tk.Label(frame, text="Файл данных (XLSX/CSV)").grid(row=0, column=0, sticky="w")
         self.input_entry = tk.Entry(frame, width=70)
         self.input_entry.grid(row=1, column=0, columnspan=2, sticky="we", pady=(0, pad))
         tk.Button(frame, text="Выбрать...", command=self._choose_input).grid(row=1, column=2, sticky="we")
 
-        # Output dir
         tk.Label(frame, text="Папка для изображений").grid(row=2, column=0, sticky="w")
         self.output_entry = tk.Entry(frame, width=70)
         self.output_entry.grid(row=3, column=0, columnspan=2, sticky="we", pady=(0, pad))
         tk.Button(frame, text="Папка...", command=self._choose_output).grid(row=3, column=2, sticky="we")
 
-        # Controls
         btn_frame = tk.Frame(frame)
         btn_frame.grid(row=4, column=0, columnspan=3, sticky="we", pady=(pad, pad))
         tk.Button(btn_frame, text="Загрузить конфиг...", command=self._load_config)
         tk.Button(btn_frame, text="Сохранить конфиг...", command=self._save_config)
         tk.Button(btn_frame, text="Старт", command=self._start)
         tk.Button(btn_frame, text="Редактор зон", command=self._open_zone_editor)
-        # Pack buttons with spacing
         for idx, child in enumerate(btn_frame.winfo_children()):
             child.pack(side=tk.LEFT, padx=(0 if idx == 0 else pad, 0))
 
-        # Progress
         tk.Label(frame, text="Прогресс").grid(row=5, column=0, sticky="w")
         self.progress_var = tk.DoubleVar(value=0.0)
         self.progress_bar = tk.Scale(
@@ -146,18 +124,15 @@ class ImageGeneratorApp:
         )
         self.progress_bar.grid(row=6, column=0, columnspan=3, sticky="we")
 
-        # Log
         tk.Label(frame, text="Лог").grid(row=7, column=0, sticky="w", pady=(pad, 0))
         self.log_text = tk.Text(frame, height=10)
         self.log_text.grid(row=8, column=0, columnspan=3, sticky="nsew")
 
-        # Grid weights
         frame.grid_rowconfigure(8, weight=1)
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_columnconfigure(1, weight=0)
         frame.grid_columnconfigure(2, weight=0)
 
-        # Defaults
         run_dir = get_run_dir()
         default_output = os.path.join(run_dir, self.config.get("output_dir", "output"))
         self.output_entry.insert(0, default_output)
@@ -278,24 +253,20 @@ class ImageGeneratorApp:
             messagebox.showerror("Ошибка", "Произошла ошибка, детали в логе.")
 
     def _process(self) -> None:
-        # Import heavy libs lazily
         import pandas as pd
         from PIL import Image, ImageDraw, ImageFont
 
-        # Load data
         self._log("Чтение данных...")
         path_lower = self.input_path.lower()
         if path_lower.endswith(".csv"):
             df = pd.read_csv(self.input_path)
         else:
-            # support xls/xlsx
             df = pd.read_excel(self.input_path)
 
         if df.empty:
             self._log("Файл данных пуст.")
             return
 
-        # Prepare drawing config
         base_dir = get_base_dir()
         template_path = self.config.get("template", "template.jpg")
         if not os.path.isabs(template_path):
@@ -309,13 +280,11 @@ class ImageGeneratorApp:
 
         def load_font(size: int):
             from PIL import ImageFont
-            # 1) explicit path
             if ttf_path and os.path.isfile(ttf_path):
                 try:
                     return ImageFont.truetype(ttf_path, size)
                 except Exception:
                     pass
-            # 2) common Windows fonts
             candidates = [
                 os.path.join(os.environ.get("WINDIR", "C:/Windows"), "Fonts", "arial.ttf"),
                 os.path.join(os.environ.get("WINDIR", "C:/Windows"), "Fonts", "segoeui.ttf"),
@@ -326,7 +295,6 @@ class ImageGeneratorApp:
                         return ImageFont.truetype(p, size)
                     except Exception:
                         continue
-            # 3) bundled DejaVu font in Pillow
             try:
                 return ImageFont.truetype("DejaVuSans.ttf", size)
             except Exception:
@@ -359,7 +327,7 @@ class ImageGeneratorApp:
                     except Exception:
                         return int(val)
 
-                # Вставка изображения по URL в заданный бокс (п.4)
+                # вставка изображения по URL
                 img_box = (self.config.get("image_box") or {}).copy()
                 if img_box:
                     src_col = img_box.get("source_column")
@@ -371,14 +339,12 @@ class ImageGeneratorApp:
                                 data = resp.read()
                             from PIL import Image as PILImage
                             with PILImage.open(io.BytesIO(data)) as src_img:
-                                # подготовка изображения и опциональное удаление фона
                                 remove_bg = bool(img_box.get("remove_bg", True))
                                 if remove_bg:
                                     try:
                                         import numpy as np
                                         rgba = src_img.convert("RGBA")
                                         arr = np.array(rgba)
-                                        # цвет и допуск
                                         hexcol = (img_box.get("remove_bg_color", "#FFFFFF") or "#FFFFFF").lstrip('#')
                                         rt = int(hexcol[0:2], 16)
                                         gt = int(hexcol[2:4], 16)
@@ -389,7 +355,6 @@ class ImageGeneratorApp:
                                         arr[..., 3] = np.where(mask, 0, a)
                                         src_img = PILImage.fromarray(arr)
                                         if bool(img_box.get("auto_crop", True)):
-                                            # обрезаем пустые поля по альфе
                                             alpha = src_img.split()[3]
                                             bbox = alpha.getbbox()
                                             if bbox:
@@ -409,56 +374,25 @@ class ImageGeneratorApp:
                                 new_w = max(1, int(src_img.width * scale))
                                 new_h = max(1, int(src_img.height * scale))
                                 resized = src_img.resize((new_w, new_h))
-                                # центрирование в зоне
                                 off_x = x + (bw - new_w) // 2
                                 off_y = y + (bh - new_h) // 2
-                                # если с альфой — использовать маску
                                 if resized.mode == "RGBA":
                                     base_img.paste(resized, (off_x, off_y), mask=resized.split()[3])
                                 else:
                                     base_img.paste(resized, (off_x, off_y))
 
-                                # Опционально сохраняем промежуточный PNG с прозрачным фоном (для диагностики)
-                                if bool(img_box.get("save_processed_png", False)):
-                                    try:
-                                        outdir = img_box.get("save_processed_png_dir", "cache")
-                                        os.makedirs(outdir, exist_ok=True)
-                                        fname = f"processed_{idx:04d}.png"
-                                        resized.save(os.path.join(outdir, fname))
-                                    except Exception:
-                                        pass
-
-                                # Отладка удаления фона: сохраняем маску и метрики
-                                if bool(img_box.get("debug_remove_bg", False)):
-                                    try:
-                                        import numpy as np
-                                        dbg_dir = img_box.get("debug_dir", "cache")
-                                        os.makedirs(dbg_dir, exist_ok=True)
-                                        if resized.mode == "RGBA":
-                                            alpha = np.array(resized.split()[3])
-                                            transparent = int((alpha == 0).sum())
-                                            total = alpha.size
-                                            percent = 100.0 * transparent / total
-                                            self._log(f"remove_bg: прозрачных пикселей {percent:.1f}% ({transparent}/{total})")
-                                            mask_img = Image.new("L", resized.size)
-                                            mask_img.putdata(alpha.flatten())
-                                            mask_img.save(os.path.join(dbg_dir, f"mask_{idx:04d}.png"))
-                                    except Exception:
-                                        pass
                         except Exception:
-                            # игнорируем ошибки загрузки изображения
                             pass
                 for field in self.config.get("fields", []):
                     name = field.get("name")
                     x = resolve_coord(field.get("x", 0), W)
                     y = resolve_coord(field.get("y", 0), H)
-                    # ограничительная зона для поля (опционально)
                     fx = x
                     fy = y
                     fw = resolve_coord(field.get("width", 0), W)
                     fh = resolve_coord(field.get("height", 0), H)
                     font_ref = (field.get("font_ref") or "w").lower()
-                    font_units = (field.get("font_units") or "rel").lower()  # rel|px
+                    font_units = (field.get("font_units") or "rel").lower()
                     font_size = resolve_font_size(field.get("font_size", 32), font_ref, font_units)
                     color = field.get("color", "#000000")
                     anchor = field.get("anchor", "la")
@@ -469,10 +403,8 @@ class ImageGeneratorApp:
                     font = load_font(font_size)
 
                     if fw > 0 and fh > 0:
-                        # перенос по словам в прямоугольнике
                         words = text.split()
                         line = ""
-                        # центрирование по вертикали и горизонтали для артикула
                         is_article = (name or "").strip().lower() in ("артикул", "article", "арт", "артикуль")
                         cursor_y = fy
                         try:
@@ -485,7 +417,6 @@ class ImageGeneratorApp:
                             tw, th = font.getbbox(test)[2:4]
                             if tw > fw and line:
                                 if is_article:
-                                    # горизонтальное центрирование строки
                                     lw, _ = font.getbbox(line)[2:4]
                                     cx = fx + (fw - lw) // 2
                                     draw.text((cx, cursor_y), line, font=font, fill=color, anchor="la")
@@ -501,8 +432,6 @@ class ImageGeneratorApp:
                             lw, _ = font.getbbox(line)[2:4]
                             if is_article:
                                 cx = fx + (fw - lw) // 2
-                                # вертикальное центрирование блока с одной строкой
-                                # если было только одна строка, выровняем по центру зоны
                                 total_height = step
                                 if cursor_y == fy:
                                     cursor_y = fy + (fh - total_height) // 2
@@ -512,38 +441,27 @@ class ImageGeneratorApp:
                     else:
                         draw.text((x, y), text, font=font, fill=color, anchor=anchor)
 
-                # Многострочные поля (п.6)
+                # многострочные поля
                 for mfield in self.config.get("multiline_fields", []):
                     name = mfield.get("name")
                     raw = row.get(name, "")
                     text_value = "" if raw is None else str(raw)
                     delimiter = mfield.get("delimiter", "/")
                     
-                    # Логирование исходной строки
-                    self._log(f"=== Обработка поля '{name}' ===")
-                    self._log(f"Исходная строка: '{text_value}'")
-                    
                     parts = [p.strip() for p in str(text_value).split(delimiter) if p.strip()]
-                    self._log(f"После разделения по '{delimiter}': {len(parts)} частей")
-                    for i, part in enumerate(parts):
-                        self._log(f"  Часть {i+1}: '{part}'")
                     
-                    # после разделения очищаем каждый элемент от годов выпуска/диапазонов и висячих дефисов
+                    # очистка от годов выпуска и лишних символов
                     try:
                         import re as _re
                         cleaned_parts = []
-                        for i, p in enumerate(parts):
-                            original = p
+                        for p in parts:
                             p = _re.sub(r"\b(19|20)\d{2}\b\s*[-–—]?\s*\b(19|20)\d{2}\b", "", p)
                             p = _re.sub(r"\b(19|20)\d{2}\b", "", p)
-                            p = _re.sub(r"[\s\-–—/:]+$", "", p)  # сносим хвостовые дефисы/разделители
+                            p = _re.sub(r"[\s\-–—/:]+$", "", p)
                             p = _re.sub(r"\s{2,}", " ", p).strip()
                             if p:
                                 cleaned_parts.append(p)
-                                if original != p:
-                                    self._log(f"  После очистки от годов: '{original}' -> '{p}'")
                         parts = cleaned_parts
-                        self._log(f"После очистки от годов: {len(parts)} частей")
                     except Exception:
                         pass
                     max_lines = int(mfield.get("max_lines", 6))
@@ -587,64 +505,35 @@ class ImageGeneratorApp:
                         cursor_y += step
                         return True
 
-                    # 1) заголовок
+                    # заголовок
                     if not emit_line(title):
                         continue
 
-                    # 2) построение строк: КАЖДЫЙ элемент после разделителя начинает новую строку
+                    # построение строк из токенов
                     lines: list[str] = []
-                    truncated_word = False
                     max_chars = int(mfield.get("max_chars", 20))
                     def clamp_chars(s: str) -> str:
                         if max_chars > 0 and len(s) > max_chars:
-                            result = s[:max(1, max_chars-3)] + "..."
-                            self._log(f"    Обрезание по символам: '{s}' ({len(s)} симв.) -> '{result}'")
-                            return result
+                            return s[:max(1, max_chars-3)] + "..."
                         return s
                     
-                    self._log(f"Построение строк (max_chars={max_chars}):")
-                    for token_idx, token in enumerate(parts):
-                        self._log(f"  Обработка токена {token_idx+1}: '{token}'")
-                        # НЕ разбиваем токен по пробелам - каждый токен = одна строка
+                    lines = []
+                    for token in parts:
                         result = clamp_chars(token)
                         lines.append(result)
-                        self._log(f"    Строка {len(lines)}: '{result}'")
 
-                    # ограничение по высоте и кол-ву строк
-                    if box_h > 0:
-                        slots_by_height = max(0, int(box_h // step) - 1)  # минус одна строка под заголовок
-                        # приоритет у max_lines, игнорируем ограничение по высоте
-                        allowed = max_lines
-                    else:
-                        allowed = max_lines
-                    
-                    self._log(f"Ограничения: max_lines={max_lines}, slots_by_height={slots_by_height}, allowed={allowed}")
-                    self._log(f"Всего строк: {len(lines)}")
-                    
+                    allowed = max_lines
                     to_draw = lines[:allowed] if allowed > 0 else []
-                    self._log(f"Строк для вывода: {len(to_draw)}")
-
-                    # если остался текст, добавляем "и т.д." как отдельную строку
                     overflow = len(lines) > allowed
-                    self._log(f"Переполнение: {overflow} (строк {len(lines)} > allowed {allowed})")
-                    
-                    # НЕ добавляем "..." к последней строке при переполнении
-                    # Вместо этого добавим "и т.д." как отдельную строку ниже
 
-                    self._log(f"Вывод строк:")
-                    for i, ln in enumerate(to_draw):
+                    for ln in to_draw:
                         ln = clamp_chars(ln)
-                        self._log(f"  Строка {i+1}: '{ln}'")
                         if not emit_line(ln):
-                            self._log(f"  Строка {i+1} не поместилась по высоте")
                             break
 
-                    # если был оверфлоу, пробуем вывести служебную строку (например, "и т.д.")
                     if overflow and show_overflow_text:
-                        self._log(f"Добавление overflow_text: '{overflow_text}'")
                         emit_line(str(overflow_text))
 
-                # Имя файла (п. наименование): из столбца Артикул, очищенного до [a-z0-9]
                 article_value = row.get("Артикул") or row.get("артикул") or row.get("Article") or row.get("article")
                 article_clean = ""
                 if article_value is not None:
@@ -657,7 +546,6 @@ class ImageGeneratorApp:
                 out_path = os.path.join(self.output_dir, out_name)
                 base_img.save(out_path, quality=95)
 
-            # Progress update
             progress = (idx + 1) * 100.0 / total
             self.progress_var.set(progress)
             self._log(f"Сохранено: {out_name}")
@@ -667,14 +555,7 @@ class ImageGeneratorApp:
 
 
 class ZoneEditor(tk.Toplevel):
-    """Простой редактор зон на основе предпросмотра template.jpg.
-
-    Возможности:
-    - Переключение режима: Image Box, Поле (одностр.), Многострочное поле
-    - Рисование прямоугольника мышью для всех режимов (теперь и для Поля)
-    - Выбор имени поля, размера шрифта (в долях 0..1), интерлиньяжа для multiline
-    - Сохранение в текущий self.config
-    """
+    """Редактор зон для настройки полей и изображений на шаблоне."""
 
     def __init__(self, master: tk.Misc, config: Dict[str, Any], columns: Optional[List[str]] = None):
         super().__init__(master)
@@ -717,7 +598,6 @@ class ZoneEditor(tk.Toplevel):
         ttk.Combobox(toolbar, width=5, values=["rel", "px"], textvariable=self.font_units, state="readonly").pack(side=tk.LEFT, padx=4)
         ttk.Label(toolbar, text="L-Space:").pack(side=tk.LEFT, padx=6)
         ttk.Entry(toolbar, textvariable=self.line_spacing, width=6).pack(side=tk.LEFT)
-        # переключатель удаления фона
         self.remove_bg_var = tk.BooleanVar(value=bool(self.config_ref.get("image_box", {}).get("remove_bg", True)))
         ttk.Checkbutton(toolbar, text="Убирать белый фон (Картинка)", variable=self.remove_bg_var, command=self._apply_remove_bg_flag).pack(side=tk.RIGHT, padx=8)
         ttk.Button(toolbar, text="Сохранить", command=self._save_into_config).pack(side=tk.RIGHT, padx=6)
@@ -746,16 +626,13 @@ class ZoneEditor(tk.Toplevel):
         self.canvas.bind("<Button-1>", self.on_down)
         self.canvas.bind("<B1-Motion>", self.on_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_up)
-        # Zoom with Ctrl+Wheel (or just wheel)
         self.canvas.bind("<MouseWheel>", self.on_wheel)
-        # initialize scroll region now that overlays are set up
         self._update_scrollregion()
 
     def _update_scrollregion(self):
         zw = int(self.W * self.zoom)
         zh = int(self.H * self.zoom)
         self.canvas.config(scrollregion=(0, 0, zw, zh))
-        # redraw background image scaled
         from PIL import ImageTk
         scaled = self.img.resize((zw, zh))
         self.tk_img = ImageTk.PhotoImage(scaled)
@@ -769,14 +646,12 @@ class ZoneEditor(tk.Toplevel):
         return x * self.zoom, y * self.zoom
 
     def _redraw_overlays(self):
-        # redraw point
         if self.point_id:
             self.canvas.delete(self.point_id)
             self.point_id = None
         if self.current_point:
             cx, cy = self.img_to_canvas(*self.current_point)
             self.point_id = self.canvas.create_oval(cx-4, cy-4, cx+4, cy+4, outline="yellow", width=2)
-        # redraw rect
         if self.rect_id:
             self.canvas.delete(self.rect_id)
             self.rect_id = None
@@ -808,7 +683,6 @@ class ZoneEditor(tk.Toplevel):
         new_zoom = max(0.2, min(5.0, self.zoom * factor))
         if abs(new_zoom - self.zoom) < 1e-6:
             return
-        # zoom towards cursor by keeping view position proportional
         cx = self.canvas.canvasx(e.x)
         cy = self.canvas.canvasy(e.y)
         rx = cx / max(1, int(self.W * self.zoom))
