@@ -23,17 +23,17 @@ if exist dist rd /s /q dist
 if exist %EXENAME% del /q %EXENAME%
 
 REM Build
-py -3 -m PyInstaller --noconsole --name %~nS --onefile --add-data "%ADDDATA%" %SCRIPT%
+py -3 -m PyInstaller --noconsole --name image_generator --onefile --add-data "%ADDDATA%" %SCRIPT%
 if %errorlevel% neq 0 (
   echo PyInstaller via py failed, trying python...
-  python -m PyInstaller --noconsole --name %~nS --onefile --add-data "%ADDDATA%" %SCRIPT% || goto :error
+  python -m PyInstaller --noconsole --name image_generator --onefile --add-data "%ADDDATA%" %SCRIPT% || goto :error
 )
 
 REM Move result
-if exist dist\%~nS\%~nS.exe (
-  move /y dist\%~nS\%~nS.exe %EXENAME% >nul
-) else if exist dist\%~nS.exe (
-  move /y dist\%~nS.exe %EXENAME% >nul
+if exist dist\image_generator\image_generator.exe (
+  move /y dist\image_generator\image_generator.exe %EXENAME% >nul
+) else if exist dist\image_generator.exe (
+  move /y dist\image_generator.exe %EXENAME% >nul
 )
 
 echo Built %EXENAME%
