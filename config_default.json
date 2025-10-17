@@ -1,0 +1,42 @@
+{
+  "template": "template.jpg",
+  "output_dir": "output",
+  "fields": [
+    {
+      "name": "Артикул",
+      "x": 0.58,
+      "y": 0.12,
+      "font_size": 0.07,
+      "font_ref": "w",
+      "color": "#000000",
+      "anchor": "la"
+    }
+  ],
+  "multiline_fields": [
+    {
+      "name": "Применимость по КК",
+      "x": 0.62,
+      "y": 0.42,
+      "font_size": 0.05,
+      "font_ref": "w",
+      "color": "#000000",
+      "anchor": "la",
+      "delimiter": "/",
+      "max_lines": 6,
+      "overflow_text": "и т.д.",
+      "line_spacing": 1.25
+    }
+  ],
+  "image_box": {
+    "source_column": "Ссылка на фото",
+    "x": 0.05,
+    "y": 0.28,
+    "width": 0.58,
+    "height": 0.52,
+    "fit": "contain"
+  },
+  "font": {
+    "ttf_path": null
+  },
+  "filename_pattern": "{article_clean}.jpg"
+}
